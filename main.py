@@ -56,6 +56,7 @@ class GLMCLI:
         self.prompt_session: Optional[PromptSession] = None
         self.running = False
         self._cancelled = False
+        self._ctrl_c_count = 0  # Track Ctrl+C presses for double-tap exit
         self.enable_tools = enable_tools
         self.tool_executor = None
 
@@ -77,13 +78,18 @@ class GLMCLI:
 
         @self.bindings.add(Keys.ControlC)
         def _(event):
-            """Cancel current operation"""
+            """Cancel current operation or exit on double-tap"""
             self._cancelled = True
-            event.app.exit(result=None)
+            raise KeyboardInterrupt()
 
         @self.bindings.add(Keys.ControlD)
         def _(event):
             """Exit CLI"""
+            raise EOFError()
+
+        @self.bindings.add(Keys.ControlZ)
+        def _(event):
+            """Exit CLI (like other CLI tools)"""
             raise EOFError()
 
         @self.bindings.add(Keys.ControlL)
@@ -433,13 +439,13 @@ class GLMCLI:
                     self.running = False
 
             except EOFError:
-                # Ctrl+D
+                # Ctrl+D or Ctrl+Z - exit immediately
                 print_info("\nGoodbye!")
                 self.running = False
             except KeyboardInterrupt:
-                # Ctrl+C during prompt
-                console.print()
-                continue
+                # Ctrl+C - exit immediately (like other CLI tools)
+                print_info("\nGoodbye!")
+                self.running = False
             except Exception as e:
                 print_error(f"Error: {e}")
 
