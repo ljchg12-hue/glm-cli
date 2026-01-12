@@ -22,7 +22,7 @@ class GLMAPI:
 
     # Z.AI API configuration
     DEFAULT_BASE_URL = "https://api.z.ai/api/anthropic/v1"
-    DEFAULT_MODEL = "claude-3-5-sonnet-20241022"  # Z.AI maps this to GLM-4.7
+    DEFAULT_MODEL = "glm-4.7"
     ANTHROPIC_VERSION = "2023-06-01"
 
     def __init__(self):
@@ -331,12 +331,12 @@ class GLMAPI:
             raise GLMAPIError(f"Connection error: {e}")
 
     async def get_available_models(self, force_refresh: bool = False) -> List[Dict]:
-        """Get available models (Z.AI doesn't have a models endpoint, return hardcoded list)"""
+        """Get available models (Z.AI API)"""
         return [
-            {"id": "claude-3-5-sonnet-20241022", "name": "GLM-4.7 (via Z.AI)"},
-            {"id": "glm-4.7", "name": "GLM-4.7"},
-            {"id": "glm-4-plus", "name": "GLM-4 Plus"},
-            {"id": "glm-4", "name": "GLM-4"},
+            {"id": "glm-4.7", "name": "GLM-4.7", "owned_by": "zhipu"},
+            {"id": "glm-4-plus", "name": "GLM-4 Plus", "owned_by": "zhipu"},
+            {"id": "glm-4", "name": "GLM-4", "owned_by": "zhipu"},
+            {"id": "glm-4-flash", "name": "GLM-4 Flash", "owned_by": "zhipu"},
         ]
 
     async def check_model_updates(self) -> Optional[Dict[str, Any]]:

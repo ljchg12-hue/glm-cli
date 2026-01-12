@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 DEFAULT_CONFIG = {
-    "model": "claude-3-5-sonnet-20241022",  # Z.AI maps to GLM-4.7
+    "model": "glm-4.7",
     "api_base": "https://api.z.ai/api/anthropic/v1",
     "max_tokens": 4096,
     "temperature": 0.7,
