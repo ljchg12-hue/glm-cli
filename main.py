@@ -44,7 +44,7 @@ from ui import (
     get_prompt_style, Colors
 )
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 
 class GLMCLI:
@@ -59,6 +59,7 @@ class GLMCLI:
         self._ctrl_c_count = 0  # Track Ctrl+C presses for double-tap exit
         self.enable_tools = enable_tools
         self.tool_executor = None
+        self.current_agent = None  # Current active agent
 
         # Setup key bindings
         self.bindings = KeyBindings()
@@ -70,7 +71,10 @@ class GLMCLI:
             '/model set', '/history', '/history clear', '/compact', '/rewind',
             '/config', '/config set', '/session', '/session list', '/version',
             '/tools', '/tools list', '/tools enable', '/tools disable',
-            '/mcp', '/mcp list', '/mcp connect', '/mcp disconnect'
+            '/mcp', '/mcp list', '/mcp connect', '/mcp disconnect',
+            '/agent', '/agent list', '/agent use', '/agent clear',
+            '/skill', '/skill list', '/skill run',
+            '/commit', '/review', '/test', '/docs', '/refactor', '/audit'
         ], ignore_case=True)
 
     def _setup_keybindings(self):
@@ -181,6 +185,21 @@ class GLMCLI:
             if user_input.startswith("/tools") or user_input.startswith("/mcp"):
                 return await self._handle_tool_command(user_input)
 
+            # Handle agent commands
+            if user_input.startswith("/agent"):
+                return await self._handle_agent_command(user_input)
+
+            # Handle skill commands
+            if user_input.startswith("/skill"):
+                return await self._handle_skill_command(user_input)
+
+            # Handle skill shortcuts (/commit, /review, /test, etc.)
+            skill_shortcuts = ['commit', 'review', 'test', 'docs', 'refactor', 'audit', 'optimize', 'fix', 'explore']
+            cmd_name = user_input[1:].split()[0].lower()
+            if cmd_name in skill_shortcuts:
+                args = ' '.join(user_input[1:].split()[1:])
+                return await self._run_skill(cmd_name, args)
+
             result = await self.command_handler.execute(user_input)
             if not result.success and result.message:
                 print_error(result.message)
@@ -269,6 +288,110 @@ class GLMCLI:
 
         return True
 
+    async def _handle_agent_command(self, command: str) -> bool:
+        """Handle agent-related commands"""
+        from tools.agents import agent_registry
+
+        parts = command.strip()[1:].split()
+        args = parts[1:] if len(parts) > 1 else []
+
+        if not args:
+            # Show current agent status
+            if self.current_agent:
+                console.print(f"\n[bold]Current Agent:[/bold] {self.current_agent.name}")
+                console.print(f"[dim]{self.current_agent.description}[/dim]")
+            else:
+                console.print("\n[dim]No agent active. Use /agent use <name> to activate.[/dim]")
+            return True
+
+        subcmd = args[0].lower()
+
+        if subcmd == "list":
+            agents = agent_registry.list_agents()
+            console.print("\n[bold]Available Agents:[/bold]")
+            for agent in agents:
+                marker = "●" if self.current_agent and self.current_agent.name == agent['name'] else "○"
+                console.print(f"  {marker} [{Colors.ACCENT}]{agent['name']}[/{Colors.ACCENT}] - {agent['description']}")
+
+        elif subcmd == "use" and len(args) > 1:
+            agent_name = args[1]
+            agent = agent_registry.get_agent(agent_name)
+            if agent:
+                self.current_agent = agent
+                print_success(f"Activated agent: {agent.name}")
+                console.print(f"[dim]{agent.description}[/dim]")
+            else:
+                print_error(f"Agent not found: {agent_name}")
+                console.print("[dim]Use /agent list to see available agents[/dim]")
+
+        elif subcmd == "clear":
+            self.current_agent = None
+            print_info("Agent deactivated")
+
+        return True
+
+    async def _handle_skill_command(self, command: str) -> bool:
+        """Handle skill-related commands"""
+        from tools.skills import skill_registry
+
+        parts = command.strip()[1:].split()
+        args = parts[1:] if len(parts) > 1 else []
+
+        if not args:
+            # Show skill help
+            console.print("\n[bold]Skill Commands:[/bold]")
+            console.print("  /skill list         - List available skills")
+            console.print("  /skill run <name>   - Run a skill")
+            console.print("\n[bold]Skill Shortcuts:[/bold]")
+            console.print("  /commit, /review, /test, /docs, /refactor, /audit")
+            return True
+
+        subcmd = args[0].lower()
+
+        if subcmd == "list":
+            skills = skill_registry.list_skills()
+            console.print("\n[bold]Available Skills:[/bold]")
+            for skill in skills:
+                console.print(f"  [{Colors.ACCENT}]/{skill['name']}[/{Colors.ACCENT}] - {skill['description']}")
+
+        elif subcmd == "run" and len(args) > 1:
+            skill_name = args[1]
+            skill_args = ' '.join(args[2:]) if len(args) > 2 else ''
+            return await self._run_skill(skill_name, skill_args)
+
+        return True
+
+    async def _run_skill(self, skill_name: str, args: str = "") -> bool:
+        """Run a skill by name"""
+        from tools.skills import skill_registry
+
+        skill = skill_registry.get_skill(skill_name)
+        if not skill:
+            print_error(f"Skill not found: {skill_name}")
+            return True
+
+        # Check if skill requires args
+        if skill.requires_args and not args:
+            print_warning(f"Skill '{skill_name}' requires arguments")
+            console.print(f"[dim]Usage: /{skill_name} <args>[/dim]")
+            return True
+
+        # Get the skill prompt
+        prompt = skill_registry.get_skill_prompt(skill_name, args)
+        if not prompt:
+            print_error(f"Could not get prompt for skill: {skill_name}")
+            return True
+
+        console.print(f"\n[bold cyan]Running skill:[/bold cyan] {skill_name}")
+
+        # Send the skill prompt as a message
+        if self.enable_tools and self.tool_executor:
+            await self._send_message_with_tools(prompt)
+        else:
+            await self._send_message(prompt)
+
+        return True
+
     async def _send_message(self, message: str):
         """Send message to GLM and display response (no tools)"""
         # Add user message to session
@@ -276,6 +399,11 @@ class GLMCLI:
 
         # Prepare messages for API
         messages = self.session.get_messages_for_api()
+
+        # Add agent system prompt if active
+        if self.current_agent:
+            agent_prompt = self.current_agent.system_prompt
+            messages.insert(0, {"role": "system", "content": agent_prompt})
 
         # Display streaming response
         display = StreamingDisplay()
@@ -326,6 +454,11 @@ class GLMCLI:
 
         # Prepare messages for API
         messages = self.session.get_messages_for_api()
+
+        # Add agent system prompt if active
+        if self.current_agent:
+            agent_prompt = self.current_agent.system_prompt
+            messages.insert(0, {"role": "system", "content": agent_prompt})
 
         self._cancelled = False
         max_iterations = 10  # Prevent infinite loops
