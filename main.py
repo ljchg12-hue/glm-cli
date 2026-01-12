@@ -81,20 +81,20 @@ class GLMCLI:
         """Setup keyboard shortcuts"""
 
         @self.bindings.add(Keys.ControlC)
-        def _(event):
-            """Cancel current operation or exit on double-tap"""
+        def handle_ctrl_c(event):
+            """Cancel current operation or exit"""
             self._cancelled = True
-            raise KeyboardInterrupt()
+            event.app.exit(result='__exit__')
 
         @self.bindings.add(Keys.ControlD)
-        def _(event):
+        def handle_ctrl_d(event):
             """Exit CLI"""
-            raise EOFError()
+            event.app.exit(result='__exit__')
 
         @self.bindings.add(Keys.ControlZ)
-        def _(event):
+        def handle_ctrl_z(event):
             """Exit CLI (like other CLI tools)"""
-            raise EOFError()
+            event.app.exit(result='__exit__')
 
         @self.bindings.add(Keys.ControlL)
         def _(event):
@@ -565,6 +565,12 @@ class GLMCLI:
 
                 if user_input is None:
                     continue
+
+                # Handle exit signal from key bindings
+                if user_input == '__exit__':
+                    print_info("\nGoodbye!")
+                    self.running = False
+                    break
 
                 # Process input
                 should_continue = await self.process_input(user_input)
