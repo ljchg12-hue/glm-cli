@@ -13,7 +13,7 @@ from session import Session, history_manager
 from api import api
 from ui import (
     Colors, console, print_help, print_error, print_success,
-    print_info, print_warning, print_model_update
+    print_info, print_warning, print_model_update, interactive_select
 )
 
 
@@ -103,8 +103,8 @@ class CommandHandler:
 
         subcmd = args[0].lower()
 
-        if subcmd == "list":
-            # List available models
+        if subcmd == "list" or subcmd == "set":
+            # Fetch available models
             console.print("\n[bold]Fetching available models...[/bold]")
             models = await api.get_available_models(force_refresh=True)
 
@@ -112,28 +112,34 @@ class CommandHandler:
                 print_warning("Could not fetch model list. Check your API key.")
                 return CommandResult()
 
-            table = Table(title="Available Models")
-            table.add_column("Model ID", style=Colors.ACCENT)
-            table.add_column("Owner", style=Colors.DIM)
+            # If /model set <name> was provided directly
+            if subcmd == "set" and len(args) > 1:
+                new_model = args[1]
+                old_model = config.model
+                config.set("model", new_model)
+                api.model = new_model
+                self.session.model = new_model
+                print_success(f"Model changed: {old_model} → {new_model}")
+                return CommandResult()
 
-            for model in models:
-                is_current = "✓ " if model.get("id") == config.model else "  "
-                table.add_row(
-                    f"{is_current}{model.get('id', 'unknown')}",
-                    model.get("owned_by", "unknown")
-                )
+            # Show interactive selector
+            model_options = [(m.get("id"), m.get("id")) for m in models if m.get("id")]
 
-            console.print(table)
-            console.print()
-            return CommandResult()
+            selected = interactive_select(
+                title="Select a model:",
+                options=model_options,
+                current=config.model
+            )
 
-        elif subcmd == "set" and len(args) > 1:
-            new_model = args[1]
-            old_model = config.model
-            config.set("model", new_model)
-            api.model = new_model
-            self.session.model = new_model
-            print_success(f"Model changed: {old_model} → {new_model}")
+            if selected:
+                old_model = config.model
+                config.set("model", selected)
+                api.model = selected
+                self.session.model = selected
+                print_success(f"Model changed: {old_model} → {selected}")
+            else:
+                print_info("Model selection cancelled")
+
             return CommandResult()
 
         else:
