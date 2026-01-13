@@ -26,6 +26,11 @@ class MCPServer:
 class MCPClient:
     """Client for Model Context Protocol servers"""
 
+    # Connection settings
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1.0  # seconds
+    REQUEST_TIMEOUT = 30  # seconds
+
     def __init__(self):
         self.servers: Dict[str, MCPServer] = {}
         self.connections: Dict[str, Tuple[asyncio.StreamReader, asyncio.StreamWriter, asyncio.subprocess.Process]] = {}
@@ -53,8 +58,16 @@ class MCPClient:
         except Exception as e:
             print(f"Error loading MCP config: {e}", file=sys.stderr)
 
-    async def connect(self, server_name: str) -> bool:
-        """Connect to an MCP server"""
+    async def connect(self, server_name: str, retry: bool = True) -> bool:
+        """Connect to an MCP server with retry logic
+
+        Args:
+            server_name: Name of the server to connect to
+            retry: Whether to retry on failure (default: True)
+
+        Returns:
+            True if connected successfully, False otherwise
+        """
         if server_name not in self.servers:
             return False
 
@@ -62,41 +75,52 @@ class MCPClient:
             return True  # Already connected
 
         server = self.servers[server_name]
+        max_attempts = self.MAX_RETRIES if retry else 1
 
-        try:
-            # Prepare environment
-            env = os.environ.copy()
-            if server.env:
-                env.update(server.env)
+        for attempt in range(max_attempts):
+            try:
+                # Prepare environment
+                env = os.environ.copy()
+                if server.env:
+                    env.update(server.env)
 
-            # Start the server process
-            process = await asyncio.create_subprocess_exec(
-                server.command,
-                *server.args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env
-            )
+                # Start the server process
+                process = await asyncio.create_subprocess_exec(
+                    server.command,
+                    *server.args,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env
+                )
 
-            # Store connection
-            self.connections[server_name] = (
-                process.stdout,
-                process.stdin,
-                process
-            )
+                # Store connection
+                self.connections[server_name] = (
+                    process.stdout,
+                    process.stdin,
+                    process
+                )
 
-            # Initialize the connection
-            await self._initialize(server_name)
+                # Initialize the connection
+                await self._initialize(server_name)
 
-            # List available tools
-            await self._list_tools(server_name)
+                # List available tools
+                await self._list_tools(server_name)
 
-            return True
+                return True
 
-        except Exception as e:
-            print(f"Error connecting to MCP server {server_name}: {e}", file=sys.stderr)
-            return False
+            except Exception as e:
+                # Clean up failed connection
+                if server_name in self.connections:
+                    del self.connections[server_name]
+
+                if attempt < max_attempts - 1:
+                    print(f"Connection attempt {attempt + 1} failed, retrying in {self.RETRY_DELAY}s...", file=sys.stderr)
+                    await asyncio.sleep(self.RETRY_DELAY)
+                else:
+                    print(f"Error connecting to MCP server {server_name} after {max_attempts} attempts: {e}", file=sys.stderr)
+
+        return False
 
     async def disconnect(self, server_name: str) -> None:
         """Disconnect from an MCP server"""
@@ -165,11 +189,14 @@ class MCPClient:
         await self._send_request(server_name, "initialize", {
             "protocolVersion": "2024-11-05",
             "capabilities": {
-                "tools": {}
+                "tools": {},
+                "prompts": {},
+                "resources": {},
+                "sampling": {}
             },
             "clientInfo": {
                 "name": "glm-cli",
-                "version": "1.0.0"
+                "version": "1.2.0"
             }
         })
 

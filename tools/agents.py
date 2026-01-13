@@ -29,25 +29,44 @@ class AgentRegistry:
         self._loaded = False
 
     def load_agents(self, agents_dir: Optional[str] = None) -> None:
-        """Load agents from directory"""
+        """Load agents from directory
+
+        Searches in order:
+        1. Provided agents_dir
+        2. ~/.glm/agents/ (user custom agents)
+        3. Built-in agents (fallback)
+        """
         if self._loaded:
             return
 
-        if agents_dir is None:
-            # Default to the agents directory in glm-cli
-            agents_dir = Path(__file__).parent.parent / "agents"
+        # Search paths in order of priority
+        search_paths = []
 
-        agents_dir = Path(agents_dir)
-        if not agents_dir.exists():
-            return
+        if agents_dir:
+            search_paths.append(Path(agents_dir))
 
-        for agent_file in agents_dir.glob("*.md"):
-            try:
-                agent = self._parse_agent_file(agent_file)
-                if agent:
-                    self.agents[agent.name] = agent
-            except Exception as e:
-                print(f"Error loading agent {agent_file}: {e}")
+        # User custom agents directory
+        user_agents_dir = Path.home() / ".glm" / "agents"
+        if user_agents_dir.exists():
+            search_paths.append(user_agents_dir)
+
+        # Built-in agents directory (in package)
+        builtin_dir = Path(__file__).parent.parent / "agents"
+        if builtin_dir.exists():
+            search_paths.append(builtin_dir)
+
+        # Load from all paths
+        for dir_path in search_paths:
+            if not dir_path.exists():
+                continue
+
+            for agent_file in dir_path.glob("*.md"):
+                try:
+                    agent = self._parse_agent_file(agent_file)
+                    if agent and agent.name not in self.agents:
+                        self.agents[agent.name] = agent
+                except Exception as e:
+                    print(f"Error loading agent {agent_file}: {e}")
 
         self._loaded = True
 

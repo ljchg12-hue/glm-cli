@@ -257,11 +257,43 @@ class BashTool(Tool):
 
     # Commands that should be blocked for safety
     BLOCKED_COMMANDS = [
+        # Destructive file operations
         "rm -rf /",
         "rm -rf /*",
+        "rm -rf ~",
+        "rm -rf $HOME",
+        # Disk operations
         "mkfs",
         "dd if=/dev/zero",
+        "dd if=/dev/random",
         "> /dev/sda",
+        "> /dev/nvme",
+        # Dangerous permissions
+        "chmod -R 777 /",
+        "chmod 777 /",
+        "chown -R",
+        # System destruction
+        ":(){ :|:& };:",  # Fork bomb
+        "mv /* /dev/null",
+        "cat /dev/zero >",
+        # Network attacks
+        "nc -l",  # Listening netcat
+        # Credential theft
+        "cat /etc/shadow",
+        "cat /etc/passwd",
+        # History manipulation
+        "history -c",
+        "shred",
+    ]
+
+    # Patterns to warn about (not block)
+    WARNING_PATTERNS = [
+        "sudo ",
+        "chmod 777",
+        "> /dev/",
+        "curl | bash",
+        "wget | bash",
+        "eval ",
     ]
 
     async def execute(self, command: str, timeout: int = 120,
@@ -376,9 +408,10 @@ class GlobTool(Tool):
                 )
 
             # Limit results
-            if len(matches) > 100:
+            total_count = len(matches)
+            if total_count > 100:
                 matches = matches[:100]
-                result = "\n".join(matches) + f"\n...(showing first 100 of {len(matches)} matches)"
+                result = "\n".join(matches) + f"\n...(showing first 100 of {total_count} matches)"
             else:
                 result = "\n".join(matches)
 

@@ -2,8 +2,13 @@
 
 Lightweight skill system with 10 core skills.
 Skills are predefined workflows/prompts for common tasks.
+Supports loading custom skills from ~/.glm/skills/
 """
 
+import os
+import re
+import yaml
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Callable, Any
 
@@ -59,6 +64,77 @@ class SkillRegistry:
                 return skill.prompt_template.format(args=args)
             return skill.prompt_template
         return None
+
+    def load_external_skills(self, skills_dir: Optional[str] = None) -> int:
+        """Load external skills from directory
+
+        Args:
+            skills_dir: Directory to load skills from. Defaults to ~/.glm/skills/
+
+        Returns:
+            Number of skills loaded
+        """
+        if skills_dir is None:
+            skills_dir = Path.home() / ".glm" / "skills"
+        else:
+            skills_dir = Path(skills_dir)
+
+        if not skills_dir.exists():
+            return 0
+
+        loaded = 0
+        for skill_file in skills_dir.glob("*.md"):
+            try:
+                skill = self._parse_skill_file(skill_file)
+                if skill and skill.name not in self.skills:
+                    self.register(skill)
+                    loaded += 1
+            except Exception as e:
+                print(f"Error loading skill {skill_file}: {e}")
+
+        return loaded
+
+    def _parse_skill_file(self, file_path: Path) -> Optional[Skill]:
+        """Parse skill definition from markdown file
+
+        Expected format:
+        ---
+        name: skill-name
+        description: Short description
+        keywords: [keyword1, keyword2]
+        requires_args: false
+        ---
+        Prompt template content here...
+        """
+        content = file_path.read_text(encoding='utf-8')
+
+        # Parse YAML frontmatter
+        frontmatter_match = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+        if not frontmatter_match:
+            return None
+
+        try:
+            frontmatter = yaml.safe_load(frontmatter_match.group(1))
+        except yaml.YAMLError:
+            return None
+
+        body = frontmatter_match.group(2).strip()
+
+        name = frontmatter.get('name', file_path.stem)
+        description = frontmatter.get('description', '')
+        keywords = frontmatter.get('keywords', [])
+        requires_args = frontmatter.get('requires_args', False)
+
+        if isinstance(keywords, str):
+            keywords = [keywords]
+
+        return Skill(
+            name=name,
+            description=description,
+            prompt_template=body,
+            keywords=keywords,
+            requires_args=requires_args
+        )
 
 
 # Global registry

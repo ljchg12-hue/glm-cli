@@ -11,9 +11,10 @@ from rich.markdown import Markdown
 from rich.live import Live
 from rich.spinner import Spinner
 
-__version__ = "1.0.0"
-__model__ = "GLM-4.7"
 from config import config
+
+__version__ = "1.2.0"  # Synced with main.py
+__model__ = "GLM-4.7"
 
 console = Console()
 
@@ -37,6 +38,7 @@ class Colors:
     PRIMARY = "bright_green"
     SECONDARY = "bright_blue"
     ACCENT = "bright_cyan"
+    SUCCESS = "bright_green"  # Added for tool mode
     ERROR = "bright_red"
     WARNING = "bright_yellow"
     INFO = "bright_white"

@@ -72,6 +72,31 @@ class Config:
             self._config.get("api_key")
         )
 
+    def validate_api_key(self) -> tuple[bool, str]:
+        """Validate API key format and presence
+
+        Returns:
+            tuple: (is_valid, message)
+        """
+        api_key = self.get_api_key()
+
+        if not api_key:
+            return False, "API key not found. Set ZAI_API_KEY, GLM_API_KEY, or ZHIPU_API_KEY environment variable."
+
+        if len(api_key) < 20:
+            return False, "API key appears to be too short. Please check your key."
+
+        # Check for common placeholder patterns
+        placeholders = ["your_api_key", "xxx", "test", "placeholder", "example"]
+        if any(p in api_key.lower() for p in placeholders):
+            return False, "API key appears to be a placeholder. Please set a valid key."
+
+        return True, "API key validated"
+
+    def has_api_key(self) -> bool:
+        """Check if API key is available"""
+        return bool(self.get_api_key())
+
     @property
     def model(self) -> str:
         return self._config.get("model", "glm-4.7")

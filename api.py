@@ -79,6 +79,7 @@ class GLMAPI:
             "model": self.model,
             "messages": api_messages,
             "max_tokens": max_tokens,
+            "temperature": temperature,
             "stream": False,
         }
 
@@ -126,6 +127,7 @@ class GLMAPI:
             "model": self.model,
             "messages": api_messages,
             "max_tokens": max_tokens,
+            "temperature": temperature,
             "stream": True,
         }
 
@@ -203,6 +205,7 @@ class GLMAPI:
             "model": self.model,
             "messages": api_messages,
             "max_tokens": max_tokens,
+            "temperature": temperature,
             "stream": True,
         }
 

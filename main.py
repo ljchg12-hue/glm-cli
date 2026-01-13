@@ -110,6 +110,12 @@ class GLMCLI:
 
     async def initialize(self, continue_session: bool = False, resume_id: Optional[str] = None):
         """Initialize the CLI"""
+        # Validate API key first
+        is_valid, message = config.validate_api_key()
+        if not is_valid:
+            print_error(message)
+            return False
+
         # Load or create session
         if resume_id:
             self.session = Session.load(resume_id)
@@ -143,9 +149,20 @@ class GLMCLI:
         if self.enable_tools:
             await self._initialize_tools()
 
+        # Load external skills
+        try:
+            from tools.skills import skill_registry
+            loaded = skill_registry.load_external_skills()
+            if loaded > 0:
+                print_info(f"Loaded {loaded} external skill(s)")
+        except Exception:
+            pass  # Silently ignore skill loading errors
+
         # Check for model updates on startup
         if config.get("auto_update_check", True):
             await self._check_model_updates()
+
+        return True
 
     async def _initialize_tools(self):
         """Initialize the tool system"""
@@ -553,14 +570,11 @@ class GLMCLI:
 
         while self.running:
             try:
-                # Get user input
+                # Get user input using async prompt (more efficient than run_in_executor)
                 prompt_text = '❯ ' if not self.enable_tools else '🔧❯ '
-                user_input = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: self.prompt_session.prompt(
-                        [('class:prompt', prompt_text)],
-                        multiline=False,
-                    )
+                user_input = await self.prompt_session.prompt_async(
+                    [('class:prompt', prompt_text)],
+                    multiline=False,
                 )
 
                 if user_input is None:
@@ -657,8 +671,10 @@ Examples:
                         help='One-shot query (non-interactive)')
     parser.add_argument('--model', metavar='MODEL',
                         help='Use specific model for this session')
-    parser.add_argument('--tools', action='store_true',
-                        help='Enable tool support (Read, Write, Bash, MCP)')
+    parser.add_argument('--tools', action='store_true', default=True,
+                        help='Enable tool support (Read, Write, Bash, MCP) - enabled by default')
+    parser.add_argument('--no-tools', dest='tools', action='store_false',
+                        help='Disable tool support')
     parser.add_argument('-v', '--version', action='store_true',
                         help='Show version')
     parser.add_argument('prompt', nargs='?',
@@ -691,10 +707,13 @@ async def main():
         return
 
     # Interactive mode
-    await cli.initialize(
+    init_success = await cli.initialize(
         continue_session=args.continue_session,
         resume_id=args.resume_id
     )
+
+    if not init_success:
+        return
 
     # If initial prompt provided, process it first
     if args.prompt:
