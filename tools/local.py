@@ -300,9 +300,11 @@ class BashTool(Tool):
                       cwd: Optional[str] = None, **kwargs) -> ToolResult:
         """Execute bash command"""
         try:
-            # Safety check
+            # Safety check - normalize whitespace for better pattern matching
+            normalized_cmd = ' '.join(command.split())  # Collapse multiple spaces
             for blocked in self.BLOCKED_COMMANDS:
-                if blocked in command:
+                normalized_blocked = ' '.join(blocked.split())
+                if normalized_blocked in normalized_cmd:
                     return ToolResult(
                         success=False,
                         content="",
@@ -399,7 +401,13 @@ class GlobTool(Tool):
             matches = glob_module.glob(full_pattern, recursive=True)
 
             # Sort by modification time (newest first)
-            matches.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            # Use try-except to handle files deleted between glob and sort
+            def safe_getmtime(path):
+                try:
+                    return os.path.getmtime(path)
+                except (OSError, FileNotFoundError):
+                    return 0
+            matches.sort(key=safe_getmtime, reverse=True)
 
             if not matches:
                 return ToolResult(

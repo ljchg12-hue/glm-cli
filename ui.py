@@ -113,11 +113,15 @@ def print_model_update(current: str, latest: str):
 def print_help():
     """Print help message"""
     help_text = """
-[bold]Available Commands:[/bold]
+[bold]Basic Commands:[/bold]
 
   [cyan]/help[/cyan]              Show this help message
   [cyan]/clear[/cyan]             Clear the screen
   [cyan]/exit[/cyan], [cyan]/quit[/cyan]      Exit GLM CLI
+  [cyan]/version[/cyan]           Show version info
+
+[bold]Model & Session:[/bold]
+
   [cyan]/model[/cyan]             Show current model info
   [cyan]/model list[/cyan]        List available models
   [cyan]/model set <name>[/cyan]  Switch to a different model
@@ -125,21 +129,37 @@ def print_help():
   [cyan]/history clear[/cyan]     Clear conversation history
   [cyan]/compact[/cyan]           Compress conversation context
   [cyan]/rewind[/cyan]            Go back to a previous message
+  [cyan]/session[/cyan]           Show/list sessions
   [cyan]/config[/cyan]            Show current configuration
-  [cyan]/config set <k> <v>[/cyan] Set a configuration value
+
+[bold]Tools & MCP:[/bold]
+
+  [cyan]/tools[/cyan]             Tool system status/options
+  [cyan]/tools list[/cyan]        List available tools
+  [cyan]/tools enable[/cyan]      Enable tool support
+  [cyan]/mcp[/cyan]               MCP server status/options
+  [cyan]/mcp list[/cyan]          List MCP servers
+  [cyan]/mcp connect <name>[/cyan] Connect to MCP server
+
+[bold]Agents & Skills:[/bold]
+
+  [cyan]/agent[/cyan]             Show current agent
+  [cyan]/agent list[/cyan]        List available agents
+  [cyan]/agent use <name>[/cyan]  Activate an agent
+  [cyan]/skill list[/cyan]        List available skills
+  [cyan]/commit[/cyan]            Run commit skill
+  [cyan]/review[/cyan]            Run code review skill
+  [cyan]/test[/cyan]              Run test skill
+  [cyan]/docs[/cyan]              Run docs skill
+  [cyan]/refactor[/cyan]          Run refactor skill
+  [cyan]/audit[/cyan]             Run audit skill
 
 [bold]Keyboard Shortcuts:[/bold]
 
-  [cyan]Ctrl+C[/cyan]             Cancel current response
+  [cyan]Ctrl+C[/cyan]             Cancel / Exit
   [cyan]Ctrl+D[/cyan]             Exit GLM CLI
   [cyan]Ctrl+L[/cyan]             Clear screen
   [cyan]↑/↓[/cyan]                Navigate history
-
-[bold]Tips:[/bold]
-
-  • Use triple backticks for multi-line code input
-  • Session is auto-saved for --continue support
-  • Model updates are checked automatically
 """
     console.print(Panel(help_text, title="[bold]GLM CLI Help[/bold]", border_style=Colors.ACCENT))
 

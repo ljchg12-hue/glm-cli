@@ -84,7 +84,8 @@ class AgentRegistry:
 
         name = frontmatter.get('name', file_path.stem)
         description = frontmatter.get('description', '')
-        tools = frontmatter.get('tools', '').split(', ') if frontmatter.get('tools') else []
+        tools_str = frontmatter.get('tools', '')
+        tools = [t.strip() for t in tools_str.split(',') if t.strip()] if tools_str else []
         keywords = frontmatter.get('keywords', [])
 
         return Agent(

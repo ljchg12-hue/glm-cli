@@ -362,8 +362,10 @@ class CommandHandler:
 
     async def cmd_version(self, args: list) -> CommandResult:
         """Show version"""
-        from . import __version__, __model__
+        from ui import __version__, __model__
+        from config import config
         console.print(f"\n[bold]GLM CLI[/bold] v{__version__}")
-        console.print(f"[bold]Model:[/bold] {__model__}")
+        console.print(f"[bold]Model:[/bold] {config.model}")
+        console.print(f"[bold]API:[/bold] {config.api_base}")
         console.print()
         return CommandResult()

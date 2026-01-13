@@ -75,10 +75,13 @@ class Session:
         if len(self.messages) > keep_last:
             # Create a summary of old messages
             old_messages = self.messages[:-keep_last]
-            summary = f"[Previous conversation summary: {len(old_messages)} messages discussing various topics]"
+            summary = f"[이전 대화 요약: {len(old_messages)}개의 메시지가 압축됨]"
 
-            # Keep only recent messages
-            self.messages = [Message("system", summary)] + self.messages[-keep_last:]
+            # 첫 번째 메시지로 user 역할의 컨텍스트 추가 (system 메시지 충돌 방지)
+            # assistant가 이어서 대화할 수 있도록 user 메시지로 요약 삽입
+            recent_messages = self.messages[-keep_last:]
+            context_msg = Message("user", f"--- {summary} ---\n계속해서 대화해주세요.")
+            self.messages = [context_msg] + recent_messages
             self.save()
             return len(old_messages)
         return 0

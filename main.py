@@ -30,7 +30,7 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
-from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.completion import Completer, Completion
 
 from rich.console import Console
 
@@ -44,11 +44,61 @@ from ui import (
     get_prompt_style, Colors
 )
 
-__version__ = "1.2.0"
+from ui import __version__  # 버전은 ui.py에서 관리
+
+
+class SlashCommandCompleter(Completer):
+    """Custom completer for slash commands - filters by prefix"""
+
+    def __init__(self, commands: list):
+        self.commands = sorted(commands)
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor.lstrip()
+
+        # /로 시작할 때만 자동완성
+        if not text.startswith('/'):
+            return
+
+        # 입력된 텍스트로 시작하는 명령어만 반환
+        for cmd in self.commands:
+            if cmd.lower().startswith(text.lower()):
+                yield Completion(
+                    cmd,
+                    start_position=-len(text),
+                    display=cmd
+                )
 
 
 class GLMCLI:
     """Main GLM CLI Application with Tool Support"""
+
+    # 도구 모드 시스템 프롬프트 - GLM이 실제 레포트를 생성하도록 유도
+    TOOL_SYSTEM_PROMPT = """당신은 도구를 사용하여 작업을 수행하는 AI 어시스턴트입니다.
+
+## 중요 규칙
+
+1. **실제 내용 출력**: "작성하겠습니다", "분석하겠습니다" 같은 의도 표현 대신 **실제 결과를 즉시 출력**하세요.
+2. **구조화된 레포트**: 도구로 수집한 정보를 종합하여 다음 형식으로 레포트를 작성하세요:
+   - 📋 개요/요약
+   - 📊 주요 발견사항 (구체적 수치/통계 포함)
+   - ⚠️ 문제점/이슈
+   - 💡 권장사항/다음 단계
+3. **완결성**: 모든 응답은 완결된 형태로 제공하세요. 미완성 상태로 끝내지 마세요.
+4. **한국어 응답**: 사용자가 한국어로 질문하면 한국어로 답변하세요.
+
+## 금지 사항
+- ❌ "~하겠습니다", "~해보겠습니다" 로 끝나는 응답
+- ❌ 정보 수집만 하고 결과 없이 종료
+- ❌ 짧은 한두 문장으로 마무리"""
+
+    # 의도만 표현하는 패턴 (이런 패턴으로 끝나면 실제 내용 요청)
+    INTENT_PATTERNS = [
+        "작성하겠습니다", "분석하겠습니다", "확인하겠습니다",
+        "살펴보겠습니다", "정리하겠습니다", "보고하겠습니다",
+        "알아보겠습니다", "검토하겠습니다", "진행하겠습니다",
+        "시작하겠습니다", "수행하겠습니다", "제공하겠습니다"
+    ]
 
     def __init__(self, enable_tools: bool = False):
         self.session: Optional[Session] = None
@@ -65,8 +115,8 @@ class GLMCLI:
         self.bindings = KeyBindings()
         self._setup_keybindings()
 
-        # Command completer for slash commands
-        self.completer = WordCompleter([
+        # Command completer for slash commands (prefix filtering)
+        self.completer = SlashCommandCompleter([
             '/help', '/clear', '/exit', '/quit', '/model', '/model list',
             '/model set', '/history', '/history clear', '/compact', '/rewind',
             '/config', '/config set', '/session', '/session list', '/version',
@@ -74,8 +124,9 @@ class GLMCLI:
             '/mcp', '/mcp list', '/mcp connect', '/mcp disconnect',
             '/agent', '/agent list', '/agent use', '/agent clear',
             '/skill', '/skill list', '/skill run',
-            '/commit', '/review', '/test', '/docs', '/refactor', '/audit'
-        ], ignore_case=True)
+            '/commit', '/review', '/test', '/docs', '/refactor', '/audit',
+            '/optimize', '/fix', '/explore', '/git-push'
+        ])
 
     def _setup_keybindings(self):
         """Setup keyboard shortcuts"""
@@ -142,7 +193,7 @@ class GLMCLI:
             key_bindings=self.bindings,
             style=get_prompt_style(),
             completer=self.completer,
-            complete_while_typing=False,
+            complete_while_typing=True,  # /m 입력 시 /mcp, /model 등 바로 표시
         )
 
         # Initialize tools if enabled
@@ -211,7 +262,7 @@ class GLMCLI:
                 return await self._handle_skill_command(user_input)
 
             # Handle skill shortcuts (/commit, /review, /test, etc.)
-            skill_shortcuts = ['commit', 'review', 'test', 'docs', 'refactor', 'audit', 'optimize', 'fix', 'explore']
+            skill_shortcuts = ['commit', 'review', 'test', 'docs', 'refactor', 'audit', 'optimize', 'fix', 'explore', 'git-push']
             cmd_name = user_input[1:].split()[0].lower()
             if cmd_name in skill_shortcuts:
                 args = ' '.join(user_input[1:].split()[1:])
@@ -223,12 +274,27 @@ class GLMCLI:
             return not result.should_exit
 
         # Regular message - send to GLM
+        # 에이전트 자동 활성화 (키워드 기반)
+        if self.enable_tools and not self.current_agent:
+            auto_agent = self._detect_agent_by_keyword(user_input)
+            if auto_agent:
+                self.current_agent = auto_agent
+                print_info(f"🤖 에이전트 자동 활성화: {auto_agent.name}")
+
         if self.enable_tools and self.tool_executor:
             await self._send_message_with_tools(user_input)
         else:
             await self._send_message(user_input)
 
         return True
+
+    def _detect_agent_by_keyword(self, text: str) -> Optional[Any]:
+        """키워드 기반으로 적절한 에이전트를 감지"""
+        try:
+            from tools.agents import agent_registry
+            return agent_registry.find_agent_by_keyword(text)
+        except Exception:
+            return None
 
     async def _handle_tool_command(self, command: str) -> bool:
         """Handle tool-related commands"""
@@ -516,6 +582,76 @@ class GLMCLI:
             print_error(f"Error: {e}")
             self.session.rewind(1)
 
+    def _is_intent_only_response(self, text: str) -> bool:
+        """응답이 의도만 표현하고 실제 내용이 없는지 확인"""
+        if not text or len(text) < 10:
+            return True
+
+        # 의도 패턴으로 끝나는지 확인
+        text_stripped = text.strip()
+        for pattern in self.INTENT_PATTERNS:
+            if text_stripped.endswith(pattern):
+                return True
+            # 패턴 뒤에 마침표/느낌표만 있는 경우도 체크
+            if text_stripped.endswith(pattern + ".") or text_stripped.endswith(pattern + "。"):
+                return True
+
+        return False
+
+    async def _request_detailed_report(self, messages: List[Dict], content_blocks: List) -> str:
+        """상세 레포트를 요청하고 반환"""
+        # 원본 messages를 수정하지 않도록 복사본 사용
+        report_messages = messages.copy()
+
+        # 현재 응답을 메시지에 추가
+        report_messages.append({
+            "role": "assistant",
+            "content": content_blocks
+        })
+
+        # 상세 레포트 요청
+        report_messages.append({
+            "role": "user",
+            "content": [{
+                "type": "text",
+                "text": """지금까지 수집한 모든 정보를 종합해서 **지금 바로** 상세한 분석 레포트를 작성해주세요.
+
+형식:
+## 📋 개요
+(프로젝트/작업에 대한 간략한 설명)
+
+## 📊 주요 발견사항
+- 구체적인 수치와 통계 포함
+- 파일 수, 라인 수, 패턴 등
+
+## ⚠️ 문제점/이슈
+- 발견된 문제 나열
+- 심각도 표시 (높음/중간/낮음)
+
+## 💡 권장사항
+- 구체적인 개선 방안
+- 다음 단계 제안
+
+**중요: "작성하겠습니다" 같은 말 없이 바로 위 형식으로 레포트를 출력하세요.**"""
+            }]
+        })
+
+        # 도구 없이 최종 레포트 요청
+        report_response = await api.chat_with_tools(
+            messages=report_messages,
+            tools=[],  # 도구 없이
+            temperature=config.get("temperature", 0.7),
+            max_tokens=config.get("max_tokens", 4096),
+        )
+
+        report_blocks = report_response.get("content", [])
+        report_text = ""
+        for block in report_blocks:
+            if block.get("type") == "text":
+                report_text += block.get("text", "")
+
+        return report_text
+
     async def _send_message_with_tools(self, message: str):
         """Send message to GLM with tool support"""
         # Add user message to session
@@ -527,16 +663,28 @@ class GLMCLI:
         # Prepare messages for API
         messages = self.session.get_messages_for_api()
 
-        # Add agent system prompt if active
+        # 시스템 프롬프트 추가 (에이전트 + 도구 규칙 결합)
         if self.current_agent:
-            agent_prompt = self.current_agent.system_prompt
-            messages.insert(0, {"role": "system", "content": agent_prompt})
+            # 에이전트 프롬프트 + 도구 응답 규칙 결합
+            combined_prompt = f"""{self.current_agent.system_prompt}
+
+---
+{self.TOOL_SYSTEM_PROMPT}"""
+            messages.insert(0, {"role": "system", "content": combined_prompt})
+        else:
+            # 도구 모드 기본 시스템 프롬프트 추가
+            messages.insert(0, {"role": "system", "content": self.TOOL_SYSTEM_PROMPT})
 
         self._cancelled = False
-        max_iterations = 10  # Prevent infinite loops
+        max_iterations = 20  # 도구 호출 최대 횟수
+        total_tool_calls = 0  # 총 도구 호출 횟수 추적
 
         try:
             for iteration in range(max_iterations):
+                # 진행 상황 표시 (5회마다)
+                if iteration > 0 and iteration % 5 == 0:
+                    print_info(f"도구 호출 {iteration}회 진행 중...")
+
                 # Make API call with tools
                 response = await api.chat_with_tools(
                     messages=messages,
@@ -566,9 +714,39 @@ class GLMCLI:
 
                 # If no tool calls, we're done
                 if not tool_uses or stop_reason != "tool_use":
-                    # Add assistant response to session
+                    final_text = "".join(text_parts) if text_parts else ""
+
+                    # 조건 1: 도구를 사용했는데 응답이 너무 짧은 경우
+                    # 조건 2: 의도만 표현하는 패턴으로 끝나는 경우
+                    needs_detailed_report = False
+
+                    if total_tool_calls >= 1 and len(final_text) < 500:
+                        needs_detailed_report = True
+                        print_warning("응답이 너무 짧습니다. 상세 레포트 요청 중...")
+
+                    elif self._is_intent_only_response(final_text):
+                        needs_detailed_report = True
+                        print_warning("의도만 표현된 응답입니다. 실제 레포트 요청 중...")
+
+                    if needs_detailed_report:
+                        report_text = await self._request_detailed_report(messages, content_blocks)
+
+                        if report_text:
+                            console.print(f"\n{report_text}")
+                            self.session.add_message("assistant", report_text)
+
+                        # 완료 통계 표시
+                        if total_tool_calls > 0:
+                            console.print(f"\n[dim]━━━ 📊 도구 사용 통계: {total_tool_calls}회 호출, {iteration + 1}회 반복 ━━━[/dim]")
+                        break
+
+                    # 정상적인 응답
                     if text_parts:
-                        self.session.add_message("assistant", "".join(text_parts))
+                        self.session.add_message("assistant", final_text)
+
+                    # 완료 통계 표시 (도구 사용 시에만)
+                    if total_tool_calls > 0:
+                        console.print(f"\n[dim]━━━ 📊 도구 사용 통계: {total_tool_calls}회 호출 완료 ━━━[/dim]")
                     break
 
                 # Execute tools
@@ -592,6 +770,9 @@ class GLMCLI:
                         self.tool_executor.format_tool_result_for_api(tool_id, result)
                     )
 
+                    # 도구 호출 횟수 증가
+                    total_tool_calls += 1
+
                 # Add assistant message with tool uses
                 messages.append({
                     "role": "assistant",
@@ -603,6 +784,48 @@ class GLMCLI:
                     "role": "user",
                     "content": tool_results
                 })
+
+            else:
+                # max_iterations 도달 시 최종 응답 강제 생성
+                print_warning(f"도구 호출 {max_iterations}회 도달 (총 {total_tool_calls}회 도구 사용). 최종 레포트 생성 중...")
+
+                # 도구 없이 최종 응답 요청 (강력한 프롬프트)
+                messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "text": """⚠️ 도구 호출 한도에 도달했습니다.
+
+**지금 바로** 수집한 모든 정보를 종합하여 최종 분석 레포트를 작성해주세요.
+
+## 📋 개요
+## 📊 주요 발견사항
+## ⚠️ 문제점/이슈
+## 💡 권장사항
+
+위 형식으로 **실제 내용을 바로 출력**하세요. "작성하겠습니다" 같은 말은 하지 마세요."""
+                    }]
+                })
+
+                final_response = await api.chat_with_tools(
+                    messages=messages,
+                    tools=[],  # 도구 없이 호출
+                    temperature=config.get("temperature", 0.7),
+                    max_tokens=config.get("max_tokens", 4096),
+                )
+
+                final_blocks = final_response.get("content", [])
+                final_text = ""
+                for block in final_blocks:
+                    if block.get("type") == "text":
+                        final_text += block.get("text", "")
+
+                if final_text:
+                    console.print(f"\n{final_text}")
+                    self.session.add_message("assistant", final_text)
+
+                # 완료 통계 표시
+                console.print(f"\n[dim]━━━ 📊 도구 사용 통계: {total_tool_calls}회 호출, {max_iterations}회 반복 (한도 도달) ━━━[/dim]")
 
         except GLMAPIError as e:
             print_error(f"API Error: {e}")
@@ -667,18 +890,74 @@ class GLMCLI:
         try:
             if self.enable_tools:
                 await self._initialize_tools()
-                # For one-shot with tools, use non-streaming
-                tools = self.tool_executor.get_all_tools() if self.tool_executor else []
-                response = await api.chat_with_tools(
-                    messages=[{"role": "user", "content": message}],
-                    tools=tools,
-                    temperature=config.get("temperature", 0.7),
-                    max_tokens=config.get("max_tokens", 4096),
-                )
-                # Extract text from response
-                for block in response.get("content", []):
-                    if block.get("type") == "text":
-                        print(block.get("text", ""))
+                if not self.tool_executor:
+                    print_error("Tool executor not available")
+                    return
+
+                # 도구 루프 실행 (interactive와 동일한 로직)
+                tools = self.tool_executor.get_all_tools()
+                messages = [{"role": "user", "content": message}]
+
+                # 시스템 프롬프트 추가
+                messages.insert(0, {"role": "system", "content": self.TOOL_SYSTEM_PROMPT})
+
+                max_iterations = 20
+                total_tool_calls = 0
+
+                for iteration in range(max_iterations):
+                    response = await api.chat_with_tools(
+                        messages=messages,
+                        tools=tools,
+                        temperature=config.get("temperature", 0.7),
+                        max_tokens=config.get("max_tokens", 4096),
+                    )
+
+                    content_blocks = response.get("content", [])
+                    stop_reason = response.get("stop_reason", "")
+
+                    text_parts = []
+                    tool_uses = []
+
+                    for block in content_blocks:
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif block.get("type") == "tool_use":
+                            tool_uses.append(block)
+
+                    # 텍스트 출력
+                    if text_parts:
+                        print("".join(text_parts))
+
+                    # 도구 호출 없으면 종료
+                    if not tool_uses or stop_reason != "tool_use":
+                        break
+
+                    # 도구 실행
+                    tool_results = []
+                    for tool_use in tool_uses:
+                        tool_name = tool_use.get("name", "")
+                        tool_input = tool_use.get("input", {})
+                        tool_id = tool_use.get("id", "")
+
+                        print(f"\n🔧 Using tool: {tool_name}")
+                        result = await self.tool_executor.execute_tool(tool_name, tool_input)
+
+                        if result.content:
+                            content_preview = result.content[:300] + "..." if len(result.content) > 300 else result.content
+                            print(content_preview)
+
+                        tool_results.append(
+                            self.tool_executor.format_tool_result_for_api(tool_id, result)
+                        )
+                        total_tool_calls += 1
+
+                    # 메시지에 추가
+                    messages.append({"role": "assistant", "content": content_blocks})
+                    messages.append({"role": "user", "content": tool_results})
+
+                if total_tool_calls > 0:
+                    print(f"\n[도구 {total_tool_calls}회 사용]")
+
             else:
                 messages = [{"role": "user", "content": message}]
                 async for chunk in api.chat_stream(

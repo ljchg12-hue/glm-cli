@@ -1,0 +1,14 @@
+# GLM CLI Dependencies
+# Install: pip install -r requirements.txt
+
+# HTTP client for API communication
+aiohttp>=3.9.0
+
+# Interactive terminal UI
+prompt_toolkit>=3.0.0
+
+# Rich terminal formatting (colors, panels, markdown)
+rich>=13.0.0
+
+# YAML parsing for agent/skill configurations
+pyyaml>=6.0
