@@ -137,7 +137,7 @@ class CommandHandler:
             return CommandResult()
 
         else:
-            print_error("Usage: /model [list | set <model_name>]")
+            print_error("Usage: /model list  OR  /model set <model_name>")
             return CommandResult(False)
 
     async def cmd_history(self, args: list) -> CommandResult:
@@ -217,7 +217,7 @@ class CommandHandler:
             print_success(f"Config updated: {key} = {value}")
             return CommandResult()
 
-        print_error("Usage: /config [set <key> <value>]")
+        print_error("Usage: /config  OR  /config set <key> <value>")
         return CommandResult(False)
 
     async def cmd_session(self, args: list) -> CommandResult:
@@ -256,7 +256,7 @@ class CommandHandler:
             console.print(table)
             return CommandResult()
 
-        print_error("Usage: /session [list]")
+        print_error("Usage: /session  OR  /session list")
         return CommandResult(False)
 
     async def cmd_version(self, args: list) -> CommandResult:
