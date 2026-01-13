@@ -232,6 +232,8 @@ class GLMCLI:
 
     async def _handle_tool_command(self, command: str) -> bool:
         """Handle tool-related commands"""
+        from ui import interactive_select
+
         parts = command.strip()[1:].split()
 
         if not parts:
@@ -242,12 +244,38 @@ class GLMCLI:
 
         if cmd == "tools":
             if not args:
-                # Show tools status
-                status = "enabled" if self.enable_tools else "disabled"
-                console.print(f"\n[bold]Tool System:[/bold] {status}")
-                if self.tool_executor:
-                    tools = self.tool_executor.get_all_tools()
-                    console.print(f"[bold]Available Tools:[/bold] {len(tools)}")
+                # Show interactive menu
+                tool_count = len(self.tool_executor.get_all_tools()) if self.tool_executor else 0
+                options = [
+                    ("status", f"📊 Show status ({tool_count} tools)"),
+                    ("list", "📋 List all tools"),
+                    ("enable", "✅ Enable tools"),
+                    ("disable", "❌ Disable tools"),
+                ]
+                selected = interactive_select("Tools options:", options)
+
+                if selected == "status":
+                    status = "enabled" if self.enable_tools else "disabled"
+                    console.print(f"\n[bold]Tool System:[/bold] {status}")
+                    if self.tool_executor:
+                        tools = self.tool_executor.get_all_tools()
+                        console.print(f"[bold]Available Tools:[/bold] {len(tools)}")
+                elif selected == "list":
+                    if self.tool_executor:
+                        tools = self.tool_executor.get_all_tools()
+                        console.print("\n[bold]Available Tools:[/bold]")
+                        for tool in tools:
+                            console.print(f"  [{Colors.ACCENT}]{tool['name']}[/{Colors.ACCENT}] - {tool.get('description', '')[:60]}")
+                    else:
+                        print_warning("Tools not initialized")
+                elif selected == "enable":
+                    if not self.tool_executor:
+                        await self._initialize_tools()
+                    self.enable_tools = True
+                    print_success("Tools enabled")
+                elif selected == "disable":
+                    self.enable_tools = False
+                    print_info("Tools disabled")
                 return True
 
             subcmd = args[0].lower()
@@ -276,10 +304,37 @@ class GLMCLI:
                 return True
 
             if not args:
-                # Show MCP status
+                # Show interactive menu
                 servers = self.tool_executor.list_mcp_servers()
                 connected = self.tool_executor.list_connected_mcp()
-                console.print(f"\n[bold]MCP Servers:[/bold] {len(servers)} configured, {len(connected)} connected")
+                options = [
+                    ("status", f"📊 Show status ({len(connected)}/{len(servers)} connected)"),
+                    ("list", "📋 List all servers"),
+                    ("connect", "🔌 Connect to a server"),
+                    ("disconnect", "🔴 Disconnect all"),
+                ]
+                selected = interactive_select("MCP options:", options)
+
+                if selected == "status":
+                    console.print(f"\n[bold]MCP Servers:[/bold] {len(servers)} configured, {len(connected)} connected")
+                elif selected == "list":
+                    console.print("\n[bold]MCP Servers:[/bold]")
+                    for server in servers:
+                        status = "✓" if server in connected else "○"
+                        console.print(f"  {status} [{Colors.ACCENT}]{server}[/{Colors.ACCENT}]")
+                elif selected == "connect":
+                    # Show server selection
+                    server_options = [(s, f"{'✓ ' if s in connected else '○ '}{s}") for s in servers]
+                    server_selected = interactive_select("Select server to connect:", server_options)
+                    if server_selected:
+                        console.print(f"Connecting to {server_selected}...")
+                        if await self.tool_executor.connect_mcp_server(server_selected):
+                            print_success(f"Connected to {server_selected}")
+                        else:
+                            print_error(f"Failed to connect to {server_selected}")
+                elif selected == "disconnect":
+                    await self.tool_executor.disconnect_all_mcp()
+                    print_info("Disconnected from all MCP servers")
                 return True
 
             subcmd = args[0].lower()

@@ -148,16 +148,34 @@ class CommandHandler:
 
     async def cmd_history(self, args: list) -> CommandResult:
         """History commands"""
-        if args and args[0].lower() == "clear":
+        if not self.session.messages:
+            print_info("No conversation history")
+            return CommandResult()
+
+        # If no args, show interactive menu
+        if not args:
+            options = [
+                ("show", f"📜 Show history ({len(self.session.messages)} messages)"),
+                ("clear", "🗑️  Clear all history"),
+            ]
+            selected = interactive_select("History options:", options)
+
+            if selected == "clear":
+                self.session.clear()
+                print_success("Conversation history cleared")
+                return CommandResult()
+            elif selected == "show":
+                pass  # Fall through to show history
+            else:
+                print_info("Cancelled")
+                return CommandResult()
+
+        elif args[0].lower() == "clear":
             self.session.clear()
             print_success("Conversation history cleared")
             return CommandResult()
 
         # Show history
-        if not self.session.messages:
-            print_info("No conversation history")
-            return CommandResult()
-
         console.print(f"\n[bold]Conversation History[/bold] ({len(self.session.messages)} messages)\n")
 
         for i, msg in enumerate(self.session.messages[-20:], 1):  # Show last 20
@@ -171,9 +189,28 @@ class CommandHandler:
 
     async def cmd_compact(self, args: list) -> CommandResult:
         """Compact conversation context"""
-        keep = 10
-        if args and args[0].isdigit():
-            keep = int(args[0])
+        if not self.session.messages:
+            print_info("No messages to compact")
+            return CommandResult()
+
+        # If no args, show interactive selector for keep count
+        if not args:
+            msg_count = len(self.session.messages)
+            options = [
+                ("5", f"Keep 5 messages (remove {max(0, msg_count - 5)})"),
+                ("10", f"Keep 10 messages (remove {max(0, msg_count - 10)})"),
+                ("20", f"Keep 20 messages (remove {max(0, msg_count - 20)})"),
+                ("50", f"Keep 50 messages (remove {max(0, msg_count - 50)})"),
+            ]
+            selected = interactive_select(f"Compact history ({msg_count} messages):", options, current="10")
+
+            if selected:
+                keep = int(selected)
+            else:
+                print_info("Cancelled")
+                return CommandResult()
+        else:
+            keep = int(args[0]) if args[0].isdigit() else 10
 
         removed = self.session.compact(keep)
         if removed:
@@ -184,9 +221,30 @@ class CommandHandler:
 
     async def cmd_rewind(self, args: list) -> CommandResult:
         """Rewind to previous message"""
-        count = 2  # Default: remove last user + assistant pair
-        if args and args[0].isdigit():
-            count = int(args[0])
+        if not self.session.messages:
+            print_info("No messages to rewind")
+            return CommandResult()
+
+        # If no args, show interactive selector
+        if not args:
+            msg_count = len(self.session.messages)
+            options = [
+                ("2", "Rewind 2 messages (last exchange)"),
+                ("4", "Rewind 4 messages"),
+                ("6", "Rewind 6 messages"),
+                ("all", f"Rewind all ({msg_count} messages)"),
+            ]
+            selected = interactive_select("Rewind options:", options, current="2")
+
+            if selected == "all":
+                count = msg_count
+            elif selected:
+                count = int(selected)
+            else:
+                print_info("Cancelled")
+                return CommandResult()
+        else:
+            count = int(args[0]) if args[0].isdigit() else 2
 
         removed = self.session.rewind(count)
         if removed:
@@ -197,8 +255,34 @@ class CommandHandler:
 
     async def cmd_config(self, args: list) -> CommandResult:
         """Configuration commands"""
+        # If no args, show interactive menu
         if not args:
-            # Show all config
+            options = [
+                ("show", "📋 Show all configuration"),
+                ("set", "✏️  Edit a setting"),
+            ]
+            selected = interactive_select("Config options:", options)
+
+            if selected == "show":
+                console.print("\n[bold]Current Configuration[/bold]\n")
+                for key, value in config.all.items():
+                    if key == "api_key":
+                        value = "****" + str(value)[-4:] if value else "not set"
+                    console.print(f"  [{Colors.ACCENT}]{key}[/{Colors.ACCENT}]: {value}")
+                console.print()
+                return CommandResult()
+            elif selected == "set":
+                # Show config keys to edit
+                config_keys = [(k, f"{k}: {v if k != 'api_key' else '****'}") for k, v in config.all.items()]
+                key_selected = interactive_select("Select setting to edit:", config_keys)
+                if key_selected:
+                    print_info(f"Use: /config set {key_selected} <new_value>")
+                return CommandResult()
+            else:
+                print_info("Cancelled")
+                return CommandResult()
+
+        if args[0].lower() == "show":
             console.print("\n[bold]Current Configuration[/bold]\n")
             for key, value in config.all.items():
                 if key == "api_key":
@@ -228,42 +312,53 @@ class CommandHandler:
 
     async def cmd_session(self, args: list) -> CommandResult:
         """Session commands"""
+        # If no args, show interactive menu
         if not args:
-            # Show current session info
-            console.print(f"\n[bold]Current Session[/bold]")
-            console.print(f"  ID: [{Colors.ACCENT}]{self.session.session_id}[/{Colors.ACCENT}]")
-            console.print(f"  Messages: {len(self.session.messages)}")
-            console.print(f"  Model: {self.session.model}")
-            console.print(f"  CWD: {self.session.cwd}")
-            console.print()
-            return CommandResult()
+            options = [
+                ("current", "📌 Show current session"),
+                ("list", "📋 List all sessions"),
+            ]
+            selected = interactive_select("Session options:", options)
 
-        if args[0].lower() == "list":
-            sessions = Session.list_sessions()
-            if not sessions:
-                print_info("No saved sessions")
+            if selected == "current":
+                console.print(f"\n[bold]Current Session[/bold]")
+                console.print(f"  ID: [{Colors.ACCENT}]{self.session.session_id}[/{Colors.ACCENT}]")
+                console.print(f"  Messages: {len(self.session.messages)}")
+                console.print(f"  Model: {self.session.model}")
+                console.print(f"  CWD: {self.session.cwd}")
+                console.print()
+                return CommandResult()
+            elif selected == "list":
+                pass  # Fall through to list
+            else:
+                print_info("Cancelled")
                 return CommandResult()
 
-            table = Table(title="Recent Sessions")
-            table.add_column("ID", style=Colors.ACCENT)
-            table.add_column("Messages")
-            table.add_column("Updated")
-            table.add_column("Directory", style=Colors.DIM)
+        if args and args[0].lower() != "list":
+            print_error("Usage: /session  OR  /session list")
+            return CommandResult(False)
 
-            for s in sessions:
-                is_current = "→ " if s["session_id"] == self.session.session_id else "  "
-                table.add_row(
-                    f"{is_current}{s['session_id']}",
-                    str(s["messages"]),
-                    s["updated_at"],
-                    s["cwd"][:30]
-                )
-
-            console.print(table)
+        # List sessions
+        sessions = Session.list_sessions()
+        if not sessions:
+            print_info("No saved sessions")
             return CommandResult()
 
-        print_error("Usage: /session  OR  /session list")
-        return CommandResult(False)
+        # Show interactive session selector
+        session_options = [
+            (s["session_id"], f"{s['session_id'][:8]}... | {s['messages']} msgs | {s['cwd'][:20]}")
+            for s in sessions
+        ]
+
+        selected_session = interactive_select(
+            "Select session to resume:",
+            session_options,
+            current=self.session.session_id
+        )
+
+        if selected_session:
+            print_info(f"To resume: glm --resume {selected_session}")
+        return CommandResult()
 
     async def cmd_version(self, args: list) -> CommandResult:
         """Show version"""
